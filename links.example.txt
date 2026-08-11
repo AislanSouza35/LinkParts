@@ -1,0 +1,5 @@
+# Cole aqui os links das partes, um por linha, na ordem correta.
+# Exemplo:
+# https://site.com/arquivo.part01.rar
+# https://site.com/arquivo.part02.rar
+# https://site.com/arquivo.part03.rar
