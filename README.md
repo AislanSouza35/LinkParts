@@ -26,12 +26,15 @@ Rode:
 python interface.py
 ```
 
-Na janela, voce pode colar os links, carregar de `links.txt`, salvar no TXT e iniciar o download.
+Na janela, voce pode colar os links, abrir qualquer TXT, salvar no TXT e iniciar o download.
+O texto pode ter descricoes junto: a interface extrai automaticamente URLs iniciadas por
+`http://` ou `https://`, remove espacos, remove pontuacao final comum e elimina duplicados.
 
 ### Pelo terminal
 
 1. Abra `links.txt`.
 2. Cole os links das partes, um por linha, na ordem correta. Use `links.example.txt` como modelo.
+   Pela interface, tambem pode colar texto com descricoes; ela salva apenas os links encontrados.
 3. Rode:
 
 ```powershell

@@ -3,3 +3,7 @@
 # https://site.com/arquivo.part01.rar
 # https://site.com/arquivo.part02.rar
 # https://site.com/arquivo.part03.rar
+#
+# A interface tambem aceita textos misturados:
+# Parte 1: https://site.com/arquivo.part01.rar
+# Parte 2 - baixar em (https://site.com/arquivo.part02.rar).

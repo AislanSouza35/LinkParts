@@ -1,5 +1,6 @@
 from pathlib import Path
 import contextlib
+import re
 import sys
 import threading
 import tkinter as tk
@@ -19,7 +20,25 @@ DEFAULT_LINKS_FILE = APP_DIR / "links.txt"
 DEFAULT_OUTPUT_FILE = APP_DIR / "downloads" / "arquivo_final.bin"
 
 
+TRAILING_URL_CHARS = ".,;:!?)]}>\"'"
+
+
+def extract_links(text: str) -> list[str]:
+    links = []
+    seen = set()
+    for match in re.finditer(r"https?://\S+", text):
+        link = match.group(0).strip().rstrip(TRAILING_URL_CHARS)
+        if link and link not in seen:
+            links.append(link)
+            seen.add(link)
+    return links
+
+
 def normalize_links_text(text: str) -> str:
+    links = extract_links(text)
+    if links:
+        return "\n".join(links) + "\n"
+
     lines = []
     for raw_line in text.splitlines():
         line = raw_line.strip()

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from interface import LogWriter, app_dir, normalize_links_text
+from interface import LogWriter, app_dir, extract_links, normalize_links_text
 
 
 class InterfaceTests(unittest.TestCase):
@@ -11,6 +11,31 @@ class InterfaceTests(unittest.TestCase):
         self.assertEqual(
             normalize_links_text(text),
             "https://example.com/a\nhttps://example.com/b\n",
+        )
+
+    def test_extract_links_from_mixed_text(self):
+        text = """
+        Parte 1: https://example.com/arquivo.part01.rar/file
+        Parte 2 - baixar em (https://example.com/arquivo.part02.rar/file).
+        Repetido: https://example.com/arquivo.part01.rar/file
+        Outro: [https://example.com/arquivo.part03.rar/file],
+        """
+
+        self.assertEqual(
+            extract_links(text),
+            [
+                "https://example.com/arquivo.part01.rar/file",
+                "https://example.com/arquivo.part02.rar/file",
+                "https://example.com/arquivo.part03.rar/file",
+            ],
+        )
+
+    def test_normalize_links_text_extracts_links_from_descriptions(self):
+        text = "Parte 1: https://example.com/a.rar\nParte 2: https://example.com/b.rar."
+
+        self.assertEqual(
+            normalize_links_text(text),
+            "https://example.com/a.rar\nhttps://example.com/b.rar\n",
         )
 
     def test_log_writer_forwards_text_to_callback(self):
