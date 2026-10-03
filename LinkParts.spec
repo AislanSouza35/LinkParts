@@ -1,11 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import copy_metadata
 
 a = Analysis(
     ['interface.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=copy_metadata('gdown'),
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
