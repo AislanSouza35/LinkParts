@@ -2,6 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 from baixar_e_juntar import (
     download_all_parts,
@@ -16,6 +17,52 @@ from baixar_e_juntar import (
 
 
 class BaixarEJuntarTests(unittest.TestCase):
+    def test_drive_filename_preserves_rar_volume_name(self):
+        with patch("gdown.download", return_value=SimpleNamespace(path="Ktp26.part01.rar")):
+            self.assertEqual(
+                filename_from_link("https://drive.google.com/file/d/example/view?usp=sharing"),
+                "Ktp26.part01.rar",
+            )
+
+    def test_drive_download_uses_file_content(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "Ktp26.part01.rar"
+
+            def drive_download(**kwargs):
+                Path(kwargs["output"]).write_bytes(b"Rar!\x1a\x07\x01\x00archive")
+                return kwargs["output"]
+
+            with patch("gdown.download", side_effect=drive_download), patch(
+                "baixar_e_juntar.urlretrieve", side_effect=ValueError("preview is not a file")
+            ):
+                self.assertTrue(download_part("https://drive.google.com/file/d/example/view", destination))
+            self.assertEqual(destination.read_bytes(), b"Rar!\x1a\x07\x01\x00archive")
+
+    def test_failed_drive_download_does_not_leave_completed_part(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            destination = Path(temp_dir) / "Ktp26.part01.rar"
+
+            def interrupted_download(**kwargs):
+                Path(kwargs["output"]).write_bytes(b"partial")
+                raise OSError("connection lost")
+
+            with patch("gdown.download", side_effect=interrupted_download), patch(
+                "baixar_e_juntar.urlretrieve", side_effect=ValueError("preview is not a file")
+            ):
+                self.assertFalse(download_part("https://drive.google.com/file/d/example/view", destination))
+            self.assertFalse(destination.exists())
+
+    def test_drive_metadata_failure_is_reported_without_crashing(self):
+        from baixar_e_juntar import run_download
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            links = root / "links.txt"
+            links.write_text("https://drive.google.com/file/d/example/view", encoding="utf-8")
+            with patch("gdown.download", side_effect=ValueError("access denied")), patch(
+                "baixar_e_juntar.download_part", return_value=True
+            ):
+                self.assertEqual(run_download(links, root / "final.bin", root / "partes"), 1)
+
     def test_read_links_ignores_empty_lines_and_comments(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             links_file = Path(temp_dir) / "links.txt"

@@ -13,12 +13,25 @@ arquivo: eles ficam separados na mesma pasta, como o WinRAR e o 7-Zip esperam.
 Abra:
 
 ```text
-dist\LinkParts.exe
+dist\atualizado\LinkParts.exe
 ```
 
 O executavel salva `links.txt` e a pasta `downloads` ao lado dele.
 
+Para gerar novamente o executavel:
+
+```powershell
+python -m pip install pyinstaller
+python -m PyInstaller LinkParts.spec --distpath dist/atualizado --clean --noconfirm
+```
+
 ### Pela interface
+
+Instale as dependencias antes de executar pelo Python (o executavel ja as inclui):
+
+```powershell
+python -m pip install -r requirements.txt
+```
 
 Rode:
 
@@ -57,6 +70,9 @@ python baixar_e_juntar.py --links meus_links.txt --saida arquivo_final.zip
 
 ## Observacoes
 
+- Links publicos de arquivos do Google Drive sao aceitos, incluindo `/file/d/ID/view`.
+  O programa trata a confirmacao de download e reconhece o nome original das partes RAR.
+  Arquivos privados ou com download bloqueado pelo Drive exibem erro no registro.
 - O script baixa uma parte por vez.
 - Se uma parte ja existir e nao estiver vazia, ela nao sera baixada de novo.
 - Se algum download falhar, o arquivo final nao sera criado.

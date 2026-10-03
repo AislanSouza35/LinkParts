@@ -9,6 +9,8 @@ from urllib.error import URLError
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen, urlretrieve
 
+import gdown
+
 
 DEFAULT_LINKS_FILE = Path("links.txt")
 DEFAULT_PARTS_DIR = Path("downloads") / "partes"
@@ -30,12 +32,24 @@ def part_path(parts_dir: Path, index: int) -> Path:
 
 
 def filename_from_link(url: str) -> str:
+    if is_google_drive_link(url):
+        metadata = gdown.download(
+            url=url, skip_download=True, quiet=True, use_cookies=False, timeout=30
+        )
+        name = metadata.path
+        if not name or name in {".", ".."} or re.search(r'[<>:"/\\|?*\x00-\x1f]', name):
+            raise ValueError("Nome de arquivo do Google Drive invalido para Windows.")
+        return name
     parts = [unquote(part) for part in urlparse(url).path.split("/") if part]
     if len(parts) >= 3 and parts[0] == "file" and parts[-1] == "file":
         return parts[-2]
     if parts:
         return parts[-1]
     return "arquivo.part"
+
+
+def is_google_drive_link(url: str) -> bool:
+    return urlparse(url).hostname in {"drive.google.com", "www.drive.google.com"}
 
 
 def is_multipart_rar(filenames: list[str]) -> bool:
@@ -95,15 +109,26 @@ def download_part(url: str, destination: Path) -> bool:
         print(f"Pulando {destination.name}: ja existe.")
         return True
 
+    temporary = destination.with_name(destination.name + ".download")
     try:
         print(f"Baixando {destination.name}...")
-        if "mediafire.com/file/" in url:
+        if is_google_drive_link(url):
+            gdown.download(
+                url=url, output=str(temporary), quiet=True,
+                use_cookies=False, timeout=60,
+            )
+            if not temporary.exists() or temporary.stat().st_size == 0:
+                raise RuntimeError("O Google Drive nao retornou o arquivo.")
+            temporary.replace(destination)
+        elif "mediafire.com/file/" in url:
             download_url(resolve_mediafire_direct_link(url), destination)
         else:
             urlretrieve(url, destination)
         return destination.exists() and destination.stat().st_size > 0
     except Exception as exc:
         print(f"Erro ao baixar {destination.name}: {exc}")
+        if is_google_drive_link(url) and temporary.exists():
+            temporary.unlink()
         if destination.exists() and destination.stat().st_size == 0:
             destination.unlink()
         return False
@@ -155,13 +180,14 @@ def run_download(
         print(f"Nenhum link valido encontrado em {links_file}.")
         return 1
 
-    filenames = [filename_from_link(link) for link in links]
-    multipart_rar = is_multipart_rar(filenames)
-
     try:
+        filenames = [filename_from_link(link) for link in links]
+        multipart_rar = is_multipart_rar(filenames)
         part_files = download_all_parts(links, parts_dir, keep_names=multipart_rar)
-    except RuntimeError as exc:
+    except Exception as exc:
         print(exc)
+        if any(is_google_drive_link(link) for link in links):
+            print("Google Drive: confira se o arquivo permite acesso publico e download.")
         print("Arquivo final nao foi criado porque houve falha no download.")
         return 1
 
