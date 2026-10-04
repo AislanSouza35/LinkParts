@@ -19,6 +19,10 @@ DEFAULT_LINKS_FILE = Path("links.txt")
 DEFAULT_PARTS_DIR = Path("downloads") / "partes"
 DEFAULT_OUTPUT_PATH = Path("downloads") / "arquivo_final.bin"
 USER_AGENT = "Mozilla/5.0"
+DRIVE_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+)
 
 
 def read_links(path: Path) -> list[str]:
@@ -81,7 +85,7 @@ def filename_from_link(url: str, cookies_file: str | None = None) -> str:
     if is_google_drive_link(url):
         metadata = gdown.download(
             url=url, skip_download=True, quiet=True, use_cookies=bool(cookies_file),
-            cookies_file=cookies_file, timeout=30,
+            cookies_file=cookies_file, timeout=30, user_agent=DRIVE_USER_AGENT,
         )
         name = metadata.path
         if not name or name in {".", ".."} or re.search(r'[<>:"/\\|?*\x00-\x1f]', name):
@@ -163,6 +167,7 @@ def download_part(url: str, destination: Path, cookies_file: str | None = None) 
             gdown.download(
                 url=url, output=str(temporary), quiet=True,
                 use_cookies=bool(cookies_file), cookies_file=cookies_file, timeout=60,
+                user_agent=DRIVE_USER_AGENT,
             )
             if not temporary.exists() or temporary.stat().st_size == 0:
                 raise RuntimeError("O Google Drive nao retornou o arquivo.")

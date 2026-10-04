@@ -1,5 +1,6 @@
 from pathlib import Path
 import tempfile
+import re
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
@@ -20,6 +21,23 @@ from baixar_e_juntar import (
 
 
 class BaixarEJuntarTests(unittest.TestCase):
+    def test_authenticated_drive_requests_use_supported_browser_identity(self):
+        def hosted_file(**kwargs):
+            identity = re.search(r"Chrome/(\d+)", kwargs.get("user_agent", "Chrome/39.0"))
+            if identity is None or int(identity[1]) < 100:
+                raise downloader.gdown.exceptions.FileURLRetrievalError("sign-in requested")
+            if kwargs.get("skip_download"):
+                return SimpleNamespace(path="test.part01.rar")
+            Path(kwargs["output"]).write_bytes(b"Rar!\x1a\x07\x01\x00test")
+            return kwargs["output"]
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch("gdown.download", side_effect=hosted_file):
+            link = "https://drive.google.com/file/d/example/view"
+            name = filename_from_link(link, cookies_file="synthetic-session.txt")
+            destination = Path(temp_dir) / name
+            self.assertTrue(download_part(link, destination, cookies_file="synthetic-session.txt"))
+            self.assertTrue(destination.read_bytes().startswith(b"Rar!\x1a\x07"))
+
     def test_imported_cookie_file_filters_domains_and_is_cleaned_up(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             source = Path(temp_dir) / "session.txt"
