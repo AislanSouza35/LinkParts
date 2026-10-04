@@ -43,6 +43,35 @@ Na janela, voce pode colar os links, abrir qualquer TXT, salvar no TXT e iniciar
 O texto pode ter descricoes junto: a interface extrai automaticamente URLs iniciadas por
 `http://` ou `https://`, remove espacos, remove pontuacao final comum e elimina duplicados.
 
+Para usar sua conta Google, entre na conta pelo navegador e escolha Chrome, Edge ou
+Firefox em **Sessao Google Drive** antes de iniciar. A sessao e usada tanto para
+identificar os nomes quanto para baixar os arquivos. Os cookies do Google ficam em
+uma pasta temporaria, removida ao concluir ou falhar; nao sao salvos no projeto.
+
+Se o navegador bloquear a leitura, feche-o e tente novamente. Chrome/Edge recentes
+no Windows podem proteger os cookies mesmo com o navegador fechado. Nesse caso,
+entre na conta Google pelo Firefox e selecione Firefox. O login nao garante a
+liberacao de um arquivo cuja cota de downloads foi excedida.
+
+### Sessao do Chrome quando a leitura direta estiver bloqueada
+
+1. No Chrome conectado a sua conta Google, abra `chrome://extensions`.
+2. Ative **Modo do desenvolvedor**, clique em **Carregar sem compactacao** e selecione
+   a pasta `chrome-extension` deste projeto.
+3. Clique na extensao **LinkParts - Sessao Google** para salvar
+   `linkparts-google-session.txt` no computador.
+4. No LinkParts, clique em **Importar sessao**, selecione esse arquivo e inicie o download.
+
+A extensao usa apenas cookies do Google e salva um arquivo local, sem enviar a sessao
+a servidores. Esse arquivo permite usar sua sessao: mantenha-o privado e apague-o
+apos o uso. O LinkParts apaga sua copia temporaria, mas preserva o arquivo importado.
+
+Pelo terminal:
+
+```powershell
+python baixar_e_juntar.py --navegador firefox
+```
+
 ### Pelo terminal
 
 1. Abra `links.txt`.

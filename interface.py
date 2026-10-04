@@ -21,6 +21,10 @@ DEFAULT_OUTPUT_FILE = APP_DIR / "downloads" / "arquivo_final.bin"
 
 
 TRAILING_URL_CHARS = ".,;:!?)]}>\"'"
+BROWSER_SESSIONS = {
+    "Sem login": None, "Chrome": "chrome", "Edge": "edge", "Firefox": "firefox",
+    "Sessao importada": None,
+}
 
 
 def extract_links(text: str) -> list[str]:
@@ -68,6 +72,8 @@ class DownloaderApp:
         self.root.minsize(720, 520)
 
         self.output_var = tk.StringVar(value=str(DEFAULT_OUTPUT_FILE))
+        self.browser_var = tk.StringVar(value="Sem login")
+        self.cookies_source = None
         self.status_var = tk.StringVar(value="Cole os links ou carregue o links.txt.")
         self.running = False
 
@@ -108,6 +114,19 @@ class DownloaderApp:
         ttk.Button(output_frame, text="Escolher", command=self.choose_output).grid(
             row=0, column=2
         )
+
+        ttk.Label(output_frame, text="Sessao Google Drive").grid(
+            row=1, column=0, sticky="w", pady=(8, 0)
+        )
+        self.browser_combo = ttk.Combobox(
+            output_frame, textvariable=self.browser_var,
+            values=list(BROWSER_SESSIONS), state="readonly", width=18,
+        )
+        self.browser_combo.grid(row=1, column=1, sticky="w", padx=8, pady=(8, 0))
+        self.import_session_button = ttk.Button(
+            output_frame, text="Importar sessao", command=self.choose_session_file
+        )
+        self.import_session_button.grid(row=1, column=2, pady=(8, 0))
 
         actions = ttk.Frame(self.root, padding=(10, 0, 10, 8))
         actions.grid(row=3, column=0, sticky="ew")
@@ -173,27 +192,54 @@ class DownloaderApp:
         if selected:
             self.output_var.set(selected)
 
+    def choose_session_file(self) -> None:
+        selected = filedialog.askopenfilename(
+            title="Escolha a sessao exportada pelo Chrome",
+            filetypes=[("Sessao Google", "*.txt"), ("Todos os arquivos", "*.*")],
+        )
+        if selected:
+            self.cookies_source = Path(selected)
+            self.browser_var.set("Sessao importada")
+            self.status_var.set("Sessao importada selecionada.")
+
     def start_download(self) -> None:
         if self.running:
             messagebox.showinfo("Download em andamento", "Aguarde o download atual terminar.")
             return
+        if self.browser_var.get() == "Sessao importada" and self.cookies_source is None:
+            self.choose_session_file()
+            if self.cookies_source is None:
+                return
         if not self.save_links():
             return
 
         self.log_text.delete("1.0", tk.END)
+        self.running = True
         self.start_button.configure(state=tk.DISABLED)
+        self.browser_combo.configure(state=tk.DISABLED)
+        self.import_session_button.configure(state=tk.DISABLED)
         self.status_var.set("Download em andamento...")
 
-        thread = threading.Thread(target=self._run_download, daemon=True)
+        thread = threading.Thread(
+            target=self._run_download,
+            args=(
+                Path(self.output_var.get()), BROWSER_SESSIONS[self.browser_var.get()],
+                self.cookies_source if self.browser_var.get() == "Sessao importada" else None,
+            ),
+            daemon=True,
+        )
         thread.start()
 
-    def _run_download(self) -> None:
-        self.running = True
-        output_file = Path(self.output_var.get())
+    def _run_download(
+        self, output_file: Path, browser: str | None, cookies_source: Path | None
+    ) -> None:
         writer = LogWriter(self._append_log)
         try:
             with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
-                return_code = run_download(DEFAULT_LINKS_FILE, output_file, DEFAULT_PARTS_DIR)
+                return_code = run_download(
+                    DEFAULT_LINKS_FILE, output_file, APP_DIR / DEFAULT_PARTS_DIR,
+                    browser=browser, cookies_source=cookies_source,
+                )
             if return_code == 0:
                 self._set_status("Finalizado.")
             else:
@@ -203,7 +249,12 @@ class DownloaderApp:
             self._set_status("Erro ao iniciar download.")
         finally:
             self.running = False
-            self.root.after(0, lambda: self.start_button.configure(state=tk.NORMAL))
+            self.root.after(0, self._enable_download_controls)
+
+    def _enable_download_controls(self) -> None:
+        self.start_button.configure(state=tk.NORMAL)
+        self.browser_combo.configure(state="readonly")
+        self.import_session_button.configure(state=tk.NORMAL)
 
     def _append_log(self, text: str) -> None:
         def update() -> None:

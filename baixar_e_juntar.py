@@ -1,10 +1,13 @@
 import argparse
+from contextlib import contextmanager
+from http.cookiejar import MozillaCookieJar
 import html
 from pathlib import Path
 import re
 import shutil
 import ssl
 import sys
+import tempfile
 from urllib.error import URLError
 from urllib.parse import unquote, urlparse
 from urllib.request import Request, urlopen, urlretrieve
@@ -31,10 +34,54 @@ def part_path(parts_dir: Path, index: int) -> Path:
     return parts_dir / f"parte-{index:04d}.part"
 
 
-def filename_from_link(url: str) -> str:
+@contextmanager
+def google_drive_session(browser: str | None, cookies_source: Path | None = None):
+    if browser is None and cookies_source is None:
+        yield None
+        return
+    if browser is not None and browser not in {"chrome", "edge", "firefox"}:
+        raise ValueError("Navegador invalido. Escolha Chrome, Edge ou Firefox.")
+
+    from gdown.download import _import_cookies_from_browser
+
+    with tempfile.TemporaryDirectory(prefix="linkparts-session-") as session_dir:
+        cookies_file = str(Path(session_dir) / "cookies.txt")
+        if cookies_source is not None:
+            source = MozillaCookieJar(str(cookies_source))
+            try:
+                source.load(ignore_discard=True)
+            except (OSError, ValueError) as exc:
+                raise RuntimeError("Arquivo de sessao invalido. Exporte novamente pelo Chrome.") from exc
+            filtered = MozillaCookieJar(cookies_file)
+            for cookie in source:
+                if cookie.domain == "google.com" or cookie.domain.endswith(".google.com"):
+                    filtered.set_cookie(cookie)
+            filtered.save(ignore_discard=True)
+            count = len(filtered)
+        else:
+            print(f"Carregando sessao Google do {browser}...")
+            try:
+                count = _import_cookies_from_browser(browser=browser, cookies_file=cookies_file)
+            except Exception as exc:
+                raise RuntimeError(
+                    f"Nao foi possivel ler a sessao do {browser}. Feche o navegador e tente "
+                    "novamente, use Importar sessao com a extensao LinkParts ou entre "
+                    "na conta Google pelo Firefox e selecione Firefox."
+                ) from exc
+        if count == 0:
+            raise RuntimeError(
+                "Nenhuma sessao Google valida encontrada. Entre na sua conta Google "
+                "no navegador e carregue a sessao novamente."
+            )
+        print("Sessao Google carregada para este download.")
+        yield cookies_file
+
+
+def filename_from_link(url: str, cookies_file: str | None = None) -> str:
     if is_google_drive_link(url):
         metadata = gdown.download(
-            url=url, skip_download=True, quiet=True, use_cookies=False, timeout=30
+            url=url, skip_download=True, quiet=True, use_cookies=bool(cookies_file),
+            cookies_file=cookies_file, timeout=30,
         )
         name = metadata.path
         if not name or name in {".", ".."} or re.search(r'[<>:"/\\|?*\x00-\x1f]', name):
@@ -103,7 +150,7 @@ def download_url(url: str, destination: Path) -> None:
             shutil.copyfileobj(response, output)
 
 
-def download_part(url: str, destination: Path) -> bool:
+def download_part(url: str, destination: Path, cookies_file: str | None = None) -> bool:
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists() and destination.stat().st_size > 0:
         print(f"Pulando {destination.name}: ja existe.")
@@ -115,7 +162,7 @@ def download_part(url: str, destination: Path) -> bool:
         if is_google_drive_link(url):
             gdown.download(
                 url=url, output=str(temporary), quiet=True,
-                use_cookies=False, timeout=60,
+                use_cookies=bool(cookies_file), cookies_file=cookies_file, timeout=60,
             )
             if not temporary.exists() or temporary.stat().st_size == 0:
                 raise RuntimeError("O Google Drive nao retornou o arquivo.")
@@ -135,14 +182,18 @@ def download_part(url: str, destination: Path) -> bool:
 
 
 def download_all_parts(
-    links: list[str], parts_dir: Path, keep_names: bool = False
+    links: list[str], parts_dir: Path, keep_names: bool = False,
+    cookies_file: str | None = None,
 ) -> list[Path]:
     part_files = []
     total = len(links)
     for index, url in enumerate(links, start=1):
-        destination = parts_dir / filename_from_link(url) if keep_names else part_path(parts_dir, index)
+        destination = (
+            parts_dir / filename_from_link(url, cookies_file=cookies_file)
+            if keep_names else part_path(parts_dir, index)
+        )
         print(f"[{index}/{total}] {url}")
-        if not download_part(url, destination):
+        if not download_part(url, destination, cookies_file=cookies_file):
             raise RuntimeError(f"Falha na parte {index}: {url}")
         part_files.append(destination)
     return part_files
@@ -158,6 +209,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Arquivo com um link por linha. Padrao: links.txt",
     )
     parser.add_argument(
+        "--cookies", type=Path,
+        help="Arquivo de sessao Netscape exportado pela extensao LinkParts.",
+    )
+    parser.add_argument(
+        "--navegador", choices=["chrome", "edge", "firefox"],
+        help="Usar a sessao Google conectada neste navegador para links do Drive.",
+    )
+    parser.add_argument(
         "--saida",
         default=str(DEFAULT_OUTPUT_PATH),
         help="Arquivo final. Padrao: downloads/arquivo_final.bin",
@@ -169,6 +228,8 @@ def run_download(
     links_file: Path,
     output_path: Path,
     parts_dir: Path = DEFAULT_PARTS_DIR,
+    browser: str | None = None,
+    cookies_source: Path | None = None,
 ) -> int:
     if not links_file.exists():
         print(f"Arquivo {links_file} nao encontrado.")
@@ -181,13 +242,17 @@ def run_download(
         return 1
 
     try:
-        filenames = [filename_from_link(link) for link in links]
-        multipart_rar = is_multipart_rar(filenames)
-        part_files = download_all_parts(links, parts_dir, keep_names=multipart_rar)
+        has_drive = any(is_google_drive_link(link) for link in links)
+        with google_drive_session(
+            browser if has_drive else None, cookies_source if has_drive else None
+        ) as cookies_file:
+            filenames = [filename_from_link(link, cookies_file=cookies_file) for link in links]
+            multipart_rar = is_multipart_rar(filenames)
+            part_files = download_all_parts(
+                links, parts_dir, keep_names=multipart_rar, cookies_file=cookies_file
+            )
     except Exception as exc:
         print(exc)
-        if any(is_google_drive_link(link) for link in links):
-            print("Google Drive: confira se o arquivo permite acesso publico e download.")
         print("Arquivo final nao foi criado porque houve falha no download.")
         return 1
 
@@ -205,7 +270,9 @@ def run_download(
 
 def main() -> int:
     args = build_parser().parse_args()
-    return run_download(Path(args.links), Path(args.saida))
+    return run_download(
+        Path(args.links), Path(args.saida), browser=args.navegador, cookies_source=args.cookies
+    )
 
 
 if __name__ == "__main__":

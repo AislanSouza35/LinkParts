@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "LinkParts - Sessao Google",
+  "version": "1.0.0",
+  "description": "Exporta localmente a sessao Google para o LinkParts quando voce clica no botao.",
+  "permissions": ["cookies", "downloads"],
+  "host_permissions": ["https://*.google.com/*"],
+  "background": {"service_worker": "background.js"},
+  "action": {"default_title": "Exportar sessao Google para LinkParts"}
+}

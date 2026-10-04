@@ -3,6 +3,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from types import SimpleNamespace
+from http.cookiejar import Cookie, MozillaCookieJar
+
+import baixar_e_juntar as downloader
 
 from baixar_e_juntar import (
     download_all_parts,
@@ -17,6 +20,94 @@ from baixar_e_juntar import (
 
 
 class BaixarEJuntarTests(unittest.TestCase):
+    def test_imported_cookie_file_filters_domains_and_is_cleaned_up(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            source = Path(temp_dir) / "session.txt"
+            jar = MozillaCookieJar(str(source))
+            for domain in [".google.com", ".example.com"]:
+                jar.set_cookie(Cookie(
+                    0, "session", "synthetic", None, False, domain, True,
+                    True, "/", True, True, None, True, None, None, {},
+                ))
+            jar.save(ignore_discard=True)
+            with downloader.google_drive_session(None, cookies_source=source) as session:
+                imported = MozillaCookieJar(session)
+                imported.load(ignore_discard=True)
+                self.assertEqual([c.domain for c in imported], [".google.com"])
+                temporary = Path(session)
+            self.assertFalse(temporary.parent.exists())
+            self.assertTrue(source.exists())
+
+    def test_browser_session_is_used_for_metadata_and_download_then_removed(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            links = root / "links.txt"
+            links.write_text("https://drive.google.com/file/d/example/view", encoding="utf-8")
+            session_paths = []
+
+            def import_session(*, browser, cookies_file):
+                self.assertEqual(browser, "firefox")
+                jar = MozillaCookieJar(cookies_file)
+                jar.set_cookie(Cookie(
+                    0, "test_session", "synthetic", None, False, ".google.com", True,
+                    True, "/", True, True, None, True, None, None, {},
+                ))
+                jar.save(ignore_discard=True)
+                session_paths.append(Path(cookies_file))
+                return 1
+
+            def drive_download(**kwargs):
+                self.assertTrue(kwargs["use_cookies"])
+                jar = MozillaCookieJar(kwargs["cookies_file"])
+                jar.load(ignore_discard=True)
+                self.assertEqual(next(iter(jar)).value, "synthetic")
+                if kwargs.get("skip_download"):
+                    return SimpleNamespace(path="test.part01.rar")
+                Path(kwargs["output"]).write_bytes(b"Rar!\x1a\x07\x01\x00test")
+                return kwargs["output"]
+
+            with patch("gdown.download._import_cookies_from_browser", side_effect=import_session), patch(
+                "gdown.download", side_effect=drive_download
+            ):
+                result = downloader.run_download(
+                    links, root / "final.bin", root / "partes", browser="firefox"
+                )
+            self.assertEqual(result, 0)
+            self.assertTrue((root / "partes" / "test.part01.rar").exists())
+            self.assertFalse((root / "final.bin").exists())
+            self.assertEqual(len(session_paths), 1)
+            self.assertFalse(session_paths[0].parent.exists())
+
+    def test_browser_without_google_session_stops_before_download(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            links = root / "links.txt"
+            links.write_text("https://drive.google.com/file/d/example/view", encoding="utf-8")
+            with patch("gdown.download._import_cookies_from_browser", return_value=0), patch(
+                "gdown.download", side_effect=AssertionError("should not download without session")
+            ):
+                self.assertEqual(downloader.run_download(
+                    links, root / "out.bin", root / "partes", browser="chrome"
+                ), 1)
+
+    def test_browser_session_is_removed_when_drive_rejects_download(self):
+        session_paths = []
+        def import_session(*, browser, cookies_file):
+            Path(cookies_file).write_text("synthetic", encoding="utf-8")
+            session_paths.append(Path(cookies_file))
+            return 1
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            links = root / "links.txt"
+            links.write_text("https://drive.google.com/file/d/example/view", encoding="utf-8")
+            with patch("gdown.download._import_cookies_from_browser", side_effect=import_session), patch(
+                "gdown.download", side_effect=ValueError("quota exceeded")
+            ):
+                self.assertEqual(downloader.run_download(
+                    links, root / "out.bin", root / "partes", browser="firefox"
+                ), 1)
+            self.assertFalse(session_paths[0].parent.exists())
+
     def test_drive_filename_preserves_rar_volume_name(self):
         with patch("gdown.download", return_value=SimpleNamespace(path="Ktp26.part01.rar")):
             self.assertEqual(

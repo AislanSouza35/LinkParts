@@ -1,10 +1,31 @@
 import unittest
+import tempfile
+from pathlib import Path
+import tkinter as tk
 from unittest.mock import patch
 
-from interface import LogWriter, app_dir, extract_links, normalize_links_text
+from interface import DownloaderApp, LogWriter, app_dir, extract_links, normalize_links_text
 
 
 class InterfaceTests(unittest.TestCase):
+    def test_selected_browser_is_captured_before_worker_starts(self):
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            with tempfile.TemporaryDirectory() as temp_dir, patch(
+                "interface.DEFAULT_LINKS_FILE", Path(temp_dir) / "links.txt"
+            ), patch("interface.threading.Thread") as worker:
+                app = DownloaderApp(root)
+                app.browser_var.set("Firefox")
+                app.links_text.insert("1.0", "https://drive.google.com/file/d/example/view")
+                app.start_download()
+                self.assertEqual(worker.call_args.kwargs["args"][1], "firefox")
+                self.assertTrue(app.running)
+                self.assertEqual(str(app.browser_combo.cget("state")), "disabled")
+                self.assertEqual(worker.call_count, 1)
+        finally:
+            root.destroy()
+
     def test_normalize_links_text_removes_empty_lines_and_comments(self):
         text = "\n# comentario\nhttps://example.com/a\n  https://example.com/b  \n"
 
